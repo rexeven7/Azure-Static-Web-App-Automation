@@ -1,0 +1,43 @@
+# This azcli script will assist in first time setup of the GitHub Actions workflow
+# Run these commmands in the Azure Cloud Shell one at a time.
+# The first time you use Azure Cloud Shell you will need to let it create a storage account that holds your cloud shell directory and bash history, etc.
+# The default values for these are fine or you can customize to your liking.
+
+# You must be logged in to Azure with az login
+az login
+
+# Switch to your azure subscription
+az account set --subscription 'YOURAZURESUBSCRIPTIONNAME'
+
+# Set the variables for the script
+githubOrganizationName='YOURGITHUBORGNAME'
+githubRepositoryName='azureStaticWebAppBicep'
+
+# Create the application registration for the template spec
+applicationRegistrationDetails=$(az ad app create --display-name 'azureStaticWebAppBicep')
+applicationRegistrationObjectId=$(echo $applicationRegistrationDetails | jq -r '.id')
+applicationRegistrationAppId=$(echo $applicationRegistrationDetails | jq -r '.appId')
+
+# Create the federated credential for the application registration
+az ad app federated-credential create \
+   --id $applicationRegistrationObjectId \
+   --parameters "{\"name\":\"azure-static-web-app-bicep\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"repo:${githubOrganizationName}/${githubRepositoryName}:ref:refs/heads/main\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
+
+# Create the service principal for the application registration
+resourceGroupResourceId=$(az group show --name rg-templateSpec --query id --output tsv)
+
+az ad sp create --id $applicationRegistrationObjectId
+az role assignment create \
+  --assignee $applicationRegistrationAppId \
+  --role Contributor \
+  --scope $resourceGroupResourceId
+
+# Echo the variables for the GitHub secrets
+echo "AZURE_CLIENT_ID: $applicationRegistrationAppId"
+echo "AZURE_TENANT_ID: $(az account show --query tenantId --output tsv)"
+echo "AZURE_SUBSCRIPTION_ID: $(az account show --query id --output tsv)"
+
+# You can record the output here as these are not sensitive secrets
+# AZURE_CLIENT_ID: cbe17d74-2a8d-4a9a-bc67-3b7b305b6096
+# AZURE_TENANT_ID: 03374011-f739-4af0-b063-e449ea7196ab
+# AZURE_SUBSCRIPTION_ID: 746d7203-b149-4979-89d1-99955263f081
